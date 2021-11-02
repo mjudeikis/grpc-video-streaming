@@ -1,7 +1,11 @@
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 <!-- Or if you want a more recent canary version -->
 <!-- <script src="https://cdn.jsdelivr.net/npm/hls.js@canary"></script> -->
-<video id="video"></video>
+<video 
+    id="video"
+    autoplay="true"
+    muted="muted"
+></video>
 <script>
     var video = document.getElementById('video');
     var host = window.location.hostname;
@@ -15,6 +19,7 @@
         hls.on(Hls.Events.MANIFEST_PARSED,function() {
             playHandler(video);
         });
+
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         console.log("HLS Not Supported");
         video.src = 'http://' + host + ':8000/media/1/stream/';
@@ -30,6 +35,7 @@
                 console.log("Autoplay started!");
             }).catch(error => {
                 console.log("Autoplay was prevented");
+                console.log(error)
             });
         }
         toggleControls()

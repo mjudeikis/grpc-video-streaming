@@ -6,19 +6,19 @@ import (
 	"log"
 	"net"
 
-	"github.com/hemanrnjn/grpc-stream/proto"
+	"github.com/mjudeikis/grpc-video-streaming/proto"
 	"google.golang.org/grpc"
 )
 
 const (
-	port = "localhost:4040"
+	port = ":4040"
 )
 
 type server struct {
 }
 
 func main() {
-
+	log.Println("starting server")
 	conn, err := net.Listen("tcp", port)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
@@ -27,6 +27,7 @@ func main() {
 
 	proto.RegisterStreamServiceServer(s, &server{})
 
+	log.Println("serve :4040")
 	if err := s.Serve(conn); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}

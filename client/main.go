@@ -7,62 +7,87 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	"github.com/hemanrnjn/grpc-stream/proto"
+	"github.com/mjudeikis/grpc-video-streaming/proto"
 	"google.golang.org/grpc"
 )
 
-type resp map[string]interface{}
+type Service struct {
+	server *http.Server
+	router *mux.Router
+}
+
+func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.router.ServeHTTP(w, r)
+}
 
 var client proto.StreamServiceClient
 
 func main() {
+	log.Print("start")
 
-	conn, err := grpc.Dial("localhost:4040", grpc.WithInsecure())
+	serverURI := "localhost:4040"
+	if os.Getenv("SERVER") != "" {
+		serverURI = os.Getenv("SERVER")
+	}
+
+	// this is global....
+	conn, err := grpc.Dial(serverURI, grpc.WithInsecure())
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-
 	client = proto.NewStreamServiceClient(conn)
 
-	http.Handle("/", handlers(client))
-	http.ListenAndServe(":8000", nil)
+	log.Print("listening :8000")
+
+	s := &Service{}
+
+	s.router = setupRouter()
+
+	s.router.Handle("/", http.FileServer(http.Dir("./public"))).Methods("GET")
+	s.router.HandleFunc("/media/{mID:[0-9]+}/stream/", streamHandler).Methods("GET")
+	s.router.HandleFunc("/media/{mID:[0-9]+}/stream/{segName:index[0-9]+.ts}", streamHandler).Methods("GET")
+
+	s.server = &http.Server{
+		Addr: ":8000",
+		Handler: handlers.CORS(
+			handlers.AllowedHeaders([]string{"Content-Type"}),
+			handlers.AllowedMethods([]string{"GET", "POST", "PUT", "PATCH", "DELETE"}),
+		)(s),
+	}
+
+	err = s.server.ListenAndServe()
+	if err != nil {
+		log.Panic(err)
+	}
 }
 
-func handlers(client proto.StreamServiceClient) *mux.Router {
-	router := mux.NewRouter()
-	router.HandleFunc("/", indexPage).Methods("GET")
-	router.HandleFunc("/media/{mID:[0-9]+}/stream/", streamHandler).Methods("GET")
-	router.HandleFunc("/media/{mID:[0-9]+}/stream/{segName:index[0-9]+.ts}", streamHandler).Methods("GET")
-	return router
-}
+func setupRouter() *mux.Router {
+	r := mux.NewRouter()
 
-func indexPage(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, "index.html")
+	r.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	return r
 }
 
 func streamHandler(response http.ResponseWriter, request *http.Request) {
 	vars := mux.Vars(request)
 
-	// TODO: To be done later for multiple media files
-	// mID, err := strconv.Atoi(vars["mID"])
-	// if err != nil {
-	// 	fmt.Println("ERROR FOUND")
-	// 	response.WriteHeader(http.StatusNotFound)
-	// 	return
-	// }
-	// fmt.Println("mID: ", mID)
-
 	segName, ok := vars["segName"]
 	if !ok {
-		serveHlsM3u8(response, request, "../media", "index.m3u8")
+		serveHlsM3u8(response, request, "./public/media", "index.m3u8")
 	} else {
-		serveHlsTs(response, request, "../media", segName)
+		serveHlsTs(response, request, "./public/media", segName)
 	}
 }
 
 func serveHlsM3u8(w http.ResponseWriter, r *http.Request, mediaBase, m3u8Name string) {
 	mediaFile := fmt.Sprintf("%s/%s", mediaBase, m3u8Name)
+	log.Println(mediaFile)
 	req := &proto.Request{Filename: mediaFile}
 
 	if response, err := client.GetFile(context.Background(), req); err == nil {
@@ -87,6 +112,7 @@ func serveHlsM3u8(w http.ResponseWriter, r *http.Request, mediaBase, m3u8Name st
 
 func serveHlsTs(w http.ResponseWriter, r *http.Request, mediaBase, segName string) {
 	mediaFile := fmt.Sprintf("%s/%s", mediaBase, segName)
+	log.Println(mediaFile)
 	req := &proto.Request{Filename: mediaFile}
 
 	if response, err := client.GetFile(context.Background(), req); err == nil {
